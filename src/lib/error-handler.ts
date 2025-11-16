@@ -42,27 +42,47 @@ export class JimengErrorHandler {
     
     // 根据错误码分类处理
     switch (ret) {
-      case '1015':
-        throw new APIException(EX.API_TOKEN_EXPIRES, `[登录失效]: ${errmsg}。请重新获取refresh_token并更新配置`);
-      
-      case '5000':
-        throw new APIException(EX.API_IMAGE_GENERATION_INSUFFICIENT_POINTS, 
+      case '1015':{
+        const ex = new APIException(EX.API_TOKEN_EXPIRES, `[登录失效]: ${errmsg}。请重新获取refresh_token并更新配置`);
+        ex.setHTTPStatusCode(401);
+        throw ex;
+        }
+
+      case '5000':{
+        const ex = new APIException(EX.API_IMAGE_GENERATION_INSUFFICIENT_POINTS, 
           `[积分不足]: ${errmsg}。建议：1)尝试使用1024x1024分辨率，2)检查是否需要购买积分，3)确认账户状态正常`);
+        ex.setHTTPStatusCode(429);
+        throw ex;
+        }
+
+      case '4001':{
+        const ex = new APIException(EX.API_CONTENT_FILTERED, `[内容违规]: ${errmsg}`);
+        ex.setHTTPStatusCode(400);
+        throw ex;
+        }
+
+      case '4002':{
+        const ex = new APIException(EX.API_REQUEST_PARAMS_INVALID, `[参数错误]: ${errmsg}`);
+        ex.setHTTPStatusCode(400);
+        throw ex;
+        }
+
+      case '5001': {
+        const ex = new APIException(EX.API_IMAGE_GENERATION_FAILED, `[生成失败]: ${errmsg}`);
+        ex.setHTTPStatusCode(429);
+        throw ex;
+        }
       
-      case '4001':
-        throw new APIException(EX.API_CONTENT_FILTERED, `[内容违规]: ${errmsg}`);
-      
-      case '4002':
-        throw new APIException(EX.API_REQUEST_PARAMS_INVALID, `[参数错误]: ${errmsg}`);
-      
-      case '5001':
-        throw new APIException(EX.API_IMAGE_GENERATION_FAILED, `[生成失败]: ${errmsg}`);
-      
-      case '5002':
-        throw new APIException(EX.API_VIDEO_GENERATION_FAILED, `[视频生成失败]: ${errmsg}`);
-      
-      default:
-        throw new APIException(EX.API_REQUEST_FAILED, `[${operation}失败]: ${errmsg} (错误码: ${ret})`);
+      case '5002':{
+        const ex = new APIException(EX.API_VIDEO_GENERATION_FAILED, `[视频生成失败]: ${errmsg}`);
+        ex.setHTTPStatusCode(429);
+        throw ex;
+        }
+      default:{
+        const ex = new APIException(EX.API_REQUEST_FAILED, `[${operation}失败]: ${errmsg} (错误码: ${ret})`);
+        ex.setHTTPStatusCode(429);
+        throw ex;
+        }
     }
   }
   
@@ -86,11 +106,15 @@ export class JimengErrorHandler {
     }
     
     if (error.response?.status >= 500) {
-      throw new APIException(EX.API_REQUEST_FAILED, `[服务器错误]: 即梦服务器暂时不可用 (${error.response.status})`);
+      const ex = new APIException(EX.API_REQUEST_FAILED, `[服务器错误]: 即梦服务器暂时不可用 (${error.response.status})`);
+      ex.setHTTPStatusCode(500);
+      throw ex;
     }
     
     if (error.response?.status === 429) {
-      throw new APIException(EX.API_REQUEST_FAILED, `[请求频率限制]: 请求过于频繁，请稍后重试`);
+      const ex = new APIException(EX.API_REQUEST_FAILED, `[请求频率限制]: 请求过于频繁，请稍后重试`);
+      ex.setHTTPStatusCode(429);
+      throw ex;
     }
     
     throw new APIException(EX.API_REQUEST_FAILED, `[${context}失败]: ${error.message}`);
@@ -133,7 +157,9 @@ export class JimengErrorHandler {
     logger.error(message);
     
     const exception = type === 'image' ? EX.API_IMAGE_GENERATION_FAILED : EX.API_VIDEO_GENERATION_FAILED;
-    throw new APIException(exception, `${typeText}生成失败，状态码: ${status}${failCode ? `，错误码: ${failCode}` : ''}`);
+    const ex = new APIException(exception, `${typeText}生成失败，状态码: ${status}${failCode ? `，错误码: ${failCode}` : ''}`);
+    if (type === 'image') ex.setHTTPStatusCode(429);
+    throw ex;
   }
   
   /**
