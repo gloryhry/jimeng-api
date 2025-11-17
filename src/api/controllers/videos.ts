@@ -1,5 +1,6 @@
 import _ from "lodash";
 import fs from "fs-extra";
+import axios from "axios";
 
 import APIException from "@/lib/exceptions/APIException.ts";
 import EX from "@/api/consts/exceptions.ts";
@@ -33,11 +34,11 @@ async function uploadImageFromFile(file: any, refreshToken: string, regionInfo: 
 async function uploadImageFromUrl(imageUrl: string, refreshToken: string, regionInfo: RegionInfo): Promise<string> {
   try {
     logger.info(`开始从URL下载并上传视频图片: ${imageUrl}`);
-    const imageResponse = await fetch(imageUrl);
-    if (!imageResponse.ok) {
-      throw new Error(`下载图片失败: ${imageResponse.status}`);
+    const imageResponse = await axios.get(imageUrl, { responseType: 'arraybuffer', timeout: 45000, validateStatus: () => true });
+    if (!imageResponse || imageResponse.status >= 400) {
+      throw new Error(`下载图片失败: ${imageResponse?.status}`);
     }
-    const imageBuffer = await imageResponse.arrayBuffer();
+    const imageBuffer = imageResponse.data as ArrayBuffer;
     return await uploadImageBuffer(imageBuffer, refreshToken, regionInfo);
   } catch (error: any) {
     logger.error(`从URL上传视频图片失败: ${error.message}`);

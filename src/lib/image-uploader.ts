@@ -1,4 +1,5 @@
 import crypto from "crypto";
+import axios from "axios";
 import { RegionInfo, request } from "@/api/controllers/core.ts";
 import { RegionUtils } from "@/lib/region-utils.ts";
 import { createSignature } from "@/lib/aws-signature.ts";
@@ -69,8 +70,7 @@ export async function uploadImageBuffer(
 
     let applyResponse;
     try {
-      applyResponse = await fetch(applyUrl, {
-        method: 'GET',
+      applyResponse = await axios.get(applyUrl, {
         headers: {
           'accept': '*/*',
           'accept-language': 'zh-CN,zh;q=0.9',
@@ -87,6 +87,8 @@ export async function uploadImageBuffer(
           'x-amz-date': timestamp,
           'x-amz-security-token': session_token,
         },
+        timeout: 45000,
+        validateStatus: () => true,
       });
     } catch (fetchError: any) {
       logger.error(`Fetch请求失败，目标URL: ${applyUrl}`);
@@ -94,12 +96,12 @@ export async function uploadImageBuffer(
       throw new Error(`网络请求失败 (${applyUrlHost}): ${fetchError.message}. 请检查: 1) 网络连接是否正常 2) 是否需要配置代理 3) DNS是否能解析该域名`);
     }
 
-    if (!applyResponse.ok) {
-      const errorText = await applyResponse.text();
-      throw new Error(`申请上传权限失败: ${applyResponse.status} - ${errorText}`);
+    if (!applyResponse || applyResponse.status >= 400) {
+      const errorText = applyResponse?.data ? JSON.stringify(applyResponse.data) : '';
+      throw new Error(`申请上传权限失败: ${applyResponse?.status} - ${errorText}`);
     }
 
-    const applyResult = await applyResponse.json();
+    const applyResult = applyResponse.data;
 
     if (applyResult?.ResponseMetadata?.Error) {
       throw new Error(`申请上传权限失败: ${JSON.stringify(applyResult.ResponseMetadata.Error)}`);
@@ -123,8 +125,7 @@ export async function uploadImageBuffer(
     // 第三步：上传图片文件
     let uploadResponse;
     try {
-      uploadResponse = await fetch(uploadUrl, {
-        method: 'POST',
+      uploadResponse = await axios.post(uploadUrl, imageBuffer as any, {
         headers: {
           'Accept': '*/*',
           'Accept-Language': 'zh-CN,zh;q=0.9',
@@ -140,7 +141,10 @@ export async function uploadImageBuffer(
           'Sec-Fetch-Site': 'cross-site',
           'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/132.0.0.0 Safari/537.36',
         },
-        body: imageBuffer,
+        maxContentLength: Infinity,
+        maxBodyLength: Infinity,
+        timeout: 60000,
+        validateStatus: () => true,
       });
     } catch (fetchError: any) {
       logger.error(`图片文件上传fetch请求失败，目标URL: ${uploadUrl}`);
@@ -148,9 +152,9 @@ export async function uploadImageBuffer(
       throw new Error(`图片上传网络请求失败 (${uploadHost}): ${fetchError.message}. 请检查网络连接`);
     }
 
-    if (!uploadResponse.ok) {
-      const errorText = await uploadResponse.text();
-      throw new Error(`图片上传失败: ${uploadResponse.status} - ${errorText}`);
+    if (!uploadResponse || uploadResponse.status >= 400) {
+      const errorText = uploadResponse?.data ? JSON.stringify(uploadResponse.data) : '';
+      throw new Error(`图片上传失败: ${uploadResponse?.status} - ${errorText}`);
     }
 
     logger.info(`图片文件上传成功`);
@@ -174,8 +178,7 @@ export async function uploadImageBuffer(
 
     let commitResponse;
     try {
-      commitResponse = await fetch(commitUrl, {
-        method: 'POST',
+      commitResponse = await axios.post(commitUrl, commitPayload, {
         headers: {
           'accept': '*/*',
           'accept-language': 'zh-CN,zh;q=0.9',
@@ -194,7 +197,8 @@ export async function uploadImageBuffer(
           'x-amz-security-token': session_token,
           'x-amz-content-sha256': payloadHash,
         },
-        body: commitPayload,
+        timeout: 45000,
+        validateStatus: () => true,
       });
     } catch (fetchError: any) {
       logger.error(`提交上传fetch请求失败，目标URL: ${commitUrl}`);
@@ -202,12 +206,12 @@ export async function uploadImageBuffer(
       throw new Error(`提交上传网络请求失败 (${applyUrlHost}): ${fetchError.message}. 请检查网络连接`);
     }
 
-    if (!commitResponse.ok) {
-      const errorText = await commitResponse.text();
-      throw new Error(`提交上传失败: ${commitResponse.status} - ${errorText}`);
+    if (!commitResponse || commitResponse.status >= 400) {
+      const errorText = commitResponse?.data ? JSON.stringify(commitResponse.data) : '';
+      throw new Error(`提交上传失败: ${commitResponse?.status} - ${errorText}`);
     }
 
-    const commitResult = await commitResponse.json();
+    const commitResult = commitResponse.data;
 
     if (commitResult?.ResponseMetadata?.Error) {
       throw new Error(`提交上传失败: ${JSON.stringify(commitResult.ResponseMetadata.Error)}`);
@@ -247,12 +251,12 @@ export async function uploadImageFromUrl(
   try {
     logger.info(`开始从URL下载并上传图片: ${imageUrl}`);
 
-    const imageResponse = await fetch(imageUrl);
-    if (!imageResponse.ok) {
-      throw new Error(`下载图片失败: ${imageResponse.status}`);
+    const imageResponse = await axios.get(imageUrl, { responseType: 'arraybuffer', timeout: 45000, validateStatus: () => true });
+    if (!imageResponse || imageResponse.status >= 400) {
+      throw new Error(`下载图片失败: ${imageResponse?.status}`);
     }
 
-    const imageBuffer = await imageResponse.arrayBuffer();
+    const imageBuffer = imageResponse.data as ArrayBuffer;
     return await uploadImageBuffer(imageBuffer, refreshToken, regionInfo);
   } catch (error: any) {
     logger.error(`从URL上传图片失败: ${error.message}`);

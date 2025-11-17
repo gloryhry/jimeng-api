@@ -40,6 +40,9 @@
   "homepage": "https://github.com/your-repo/jimeng-api#readme",
   "dependencies": {
     "axios": "^1.6.7",
+    "http-proxy-agent": "^7.0.2",
+    "https-proxy-agent": "^7.0.5",
+    "socks-proxy-agent": "^8.0.4",
     "colors": "^1.4.0",
     "crc-32": "^1.2.2",
     "cron": "^3.1.6",

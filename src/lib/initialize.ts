@@ -1,4 +1,5 @@
 import logger from './logger.js';
+import { setupGlobalProxy } from '@/lib/proxy.ts';
 
 // 允许无限量的监听器
 process.setMaxListeners(Infinity);
@@ -26,3 +27,6 @@ process.on("SIGTERM", () => {
 process.on("SIGINT", () => {
     process.exit(0);
 });
+
+// 初始化全局网络代理（基于环境变量）
+setupGlobalProxy();
