@@ -26,6 +26,43 @@ function mapQualityToResolution(quality: string): string {
   return qualityToResolutionMap[quality] || '2k';
 }
 
+const IMAGE_COUNT_ERROR_MESSAGE = "n 参数必须是 1 到 4 的整数";
+
+function resolveImageCount(value: any): number | undefined {
+  const actualValue = Array.isArray(value) ? value[0] : value;
+  if (_.isUndefined(actualValue) || _.isNull(actualValue)) {
+    return undefined;
+  }
+  const normalizedValue = _.isString(actualValue) ? actualValue.trim() : actualValue;
+  if (_.isString(normalizedValue) && normalizedValue.length === 0) {
+    throw new Error(IMAGE_COUNT_ERROR_MESSAGE);
+  }
+  const numericValue = _.isString(normalizedValue) ? Number(normalizedValue) : normalizedValue;
+  if (!Number.isInteger(numericValue) || numericValue < 1 || numericValue > 4) {
+    throw new Error(IMAGE_COUNT_ERROR_MESSAGE);
+  }
+  return numericValue;
+}
+
+function isValidOptionalImageCount(value: any): boolean {
+  try {
+    resolveImageCount(value);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function applyImageCountLimit(resultUrls: string[], limit?: number): string[] {
+  if (!_.isNumber(limit)) {
+    return resultUrls;
+  }
+  if (limit >= resultUrls.length) {
+    return resultUrls;
+  }
+  return resultUrls.slice(0, limit);
+}
+
 // 归一化 prompt，尽量容忍各种输入
 function normalizePromptInput(input: any): string {
   if (_.isUndefined(input) || _.isNull(input)) return "";
@@ -67,13 +104,14 @@ function mapOpenAIParamsToInternal(openaiParams: any) {
   };
 }
 
-async function formatOpenAIResponse(resultUrls: string[], responseFormat: string, created: number) {
+async function formatOpenAIResponse(resultUrls: string[], responseFormat: string, created: number, limit?: number) {
+  const finalUrls = applyImageCountLimit(resultUrls, limit);
   if (responseFormat === "b64_json") {
-    const b64Array = await Promise.all(resultUrls.map((url) => util.fetchFileBASE64(url)));
+    const b64Array = await Promise.all(finalUrls.map((url) => util.fetchFileBASE64(url)));
     const data = b64Array.map((b64) => ({ b64_json: b64 }));
     return { created, data };
   } else {
-    const data = resultUrls.map((url) => ({ url }));
+    const data = finalUrls.map((url) => ({ url }));
     return { created, data };
   }
 }
@@ -100,6 +138,7 @@ export default {
         .validate("body.intelligent_ratio", v => _.isUndefined(v) || _.isBoolean(v))
         .validate("body.sample_strength", v => _.isUndefined(v) || _.isFinite(v))
         .validate("body.response_format", v => _.isUndefined(v) || _.isString(v))
+        .validate("body.n", isValidOptionalImageCount, IMAGE_COUNT_ERROR_MESSAGE)
         .validate("headers.authorization", _.isString);
 
       const tokens = tokenSplit(request.headers.authorization);
@@ -113,7 +152,10 @@ export default {
         intelligent_ratio: intelligentRatio,
         sample_strength: sampleStrength,
         response_format,
+        n,
       } = request.body;
+
+      const imageCountLimit = resolveImageCount(n);
 
       const responseFormat = _.defaultTo(response_format, "url");
       const imageUrls = await generateImages(model, prompt, {
@@ -123,20 +165,7 @@ export default {
         negativePrompt,
         intelligentRatio,
       }, token);
-      let data = [];
-      if (responseFormat == "b64_json") {
-        data = (
-          await Promise.all(imageUrls.map((url) => util.fetchFileBASE64(url)))
-        ).map((b64) => ({ b64_json: b64 }));
-      } else {
-        data = imageUrls.map((url) => ({
-          url,
-        }));
-      }
-      return {
-        created: util.unixTimestamp(),
-        data,
-      };
+      return await formatOpenAIResponse(imageUrls, responseFormat, util.unixTimestamp(), imageCountLimit);
     },
     
     "/compositions": async (request: Request) => {
@@ -251,7 +280,6 @@ export default {
           url,
         }));
       }
-
       return {
         created: util.unixTimestamp(),
         data,
@@ -283,6 +311,7 @@ export default {
           .validate("body.model", v => _.isUndefined(v) || _.isString(v))
           // prompt 可选，容忍为空或各种类型（已在上方归一化为字符串）
           .validate("body.prompt", v => _.isUndefined(v) || _.isString(v))
+          .validate("body.n", isValidOptionalImageCount, IMAGE_COUNT_ERROR_MESSAGE)
           .validate("headers.authorization", _.isString);
 
         // 提取 image[] 数组
@@ -328,6 +357,7 @@ export default {
           negative_prompt,
           sample_strength,
           response_format,
+          n,
         } = request.body;
 
         // 规范化 prompt 为字符串
@@ -349,6 +379,7 @@ export default {
         const token = _.sample(tokens);
 
         const responseFormat = internalParams.responseFormat;
+        const imageCountLimit = resolveImageCount(n);
         const resultUrls = await generateImageEdits(internalParams.model, internalParams.prompt, images, {
           ratio: internalParams.ratio,
           resolution: internalParams.resolution,
@@ -356,7 +387,7 @@ export default {
           negativePrompt: request.body.negative_prompt || "", // 保持原始 negative_prompt
         }, token);
 
-        return await formatOpenAIResponse(resultUrls, responseFormat, util.unixTimestamp());
+        return await formatOpenAIResponse(resultUrls, responseFormat, util.unixTimestamp(), imageCountLimit);
 
       } else {
         // JSON 数据处理
@@ -364,6 +395,7 @@ export default {
           .validate("body.model", v => _.isUndefined(v) || _.isString(v))
           // prompt 可选，先放宽校验，再归一化
           .validate("body.prompt", v => _.isUndefined(v) || _.isString(v) || _.isArray(v) || _.isNumber(v) || _.isObject(v))
+          .validate("body.n", isValidOptionalImageCount, IMAGE_COUNT_ERROR_MESSAGE)
           .validate("headers.authorization", _.isString);
 
         const {
@@ -374,6 +406,7 @@ export default {
           negative_prompt,
           sample_strength,
           response_format,
+          n,
         } = request.body;
 
         // 规范化 prompt 为字符串
@@ -413,6 +446,7 @@ export default {
         const token = _.sample(tokens);
 
         const responseFormat = internalParams.responseFormat;
+        const imageCountLimit = resolveImageCount(n);
         const resultUrls = await generateImageEdits(internalParams.model, internalParams.prompt, images, {
           ratio: internalParams.ratio,
           resolution: internalParams.resolution,
@@ -420,7 +454,7 @@ export default {
           negativePrompt: negative_prompt || "",
         }, token);
 
-        return await formatOpenAIResponse(resultUrls, responseFormat, util.unixTimestamp());
+        return await formatOpenAIResponse(resultUrls, responseFormat, util.unixTimestamp(), imageCountLimit);
       }
     },
   },
