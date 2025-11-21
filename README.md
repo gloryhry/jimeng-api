@@ -555,17 +555,17 @@ jimeng-api/
 ### Polling Configuration
 ```typescript
 export const POLLING_CONFIG = {
-  MAX_POLL_COUNT: 900,    // Max polling attempts (15 minutes)
-  POLL_INTERVAL: 5000,    // Base polling interval (5 second)
+  MAX_POLL_COUNT: 120,    // Max polling attempts
+  POLL_INTERVAL: 5000,    // Base polling interval (5 seconds)
   STABLE_ROUNDS: 5,       // Stable rounds
-  TIMEOUT_SECONDS: 900    // Timeout (15 minutes)
+  TIMEOUT_SECONDS: 180    // Timeout (3 minutes)
 };
 ```
 
 ### Retry Configuration
 ```typescript
 export const RETRY_CONFIG = {
-  MAX_RETRY_COUNT: 3,     // Max retry attempts
+  MAX_RETRY_COUNT: 0,     // Max retry attempts
   RETRY_DELAY: 5000       // Retry delay (5 seconds)
 };
 ```
